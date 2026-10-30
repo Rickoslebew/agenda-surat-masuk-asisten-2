@@ -11,6 +11,8 @@ import {
   Volume2,
   LogOut,
   Users,
+  Cloud,
+  RefreshCw,
 } from 'lucide-react';
 import { UserSession, Notifikasi, AppSettings } from '../types';
 import { UserAvatar } from './UserAvatar';
@@ -30,6 +32,12 @@ import {
   initAuth,
   getAccessToken,
 } from '../services/authGoogleDrive';
+import {
+  pushDataToGoogleCloud,
+  pullDataFromGoogleCloud,
+  getCloudSyncState,
+  CloudSyncState,
+} from '../services/cloudSyncService';
 import { requestNotificationPermission, playNotificationSound } from '../services/notificationService';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
@@ -56,6 +64,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [isDriveConnected, setIsDriveConnected] = useState<boolean>(false);
   const [googleUserEmail, setGoogleUserEmail] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [cloudSyncState, setSyncState] = useState<CloudSyncState>(getCloudSyncState());
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(
     'Notification' in window && Notification.permission === 'granted'
   );
@@ -71,13 +81,16 @@ export const Header: React.FC<HeaderProps> = ({
       setUserList(getUsersList());
       setNotifikasiList(getNotifikasiList());
       setSettings(getAppSettings());
+      setSyncState(getCloudSyncState());
     };
 
     window.addEventListener('eagenda_data_updated', handleDataUpdate);
     window.addEventListener('eagenda_settings_updated', handleDataUpdate);
+    window.addEventListener('eagenda_cloud_sync_updated', handleDataUpdate);
     return () => {
       window.removeEventListener('eagenda_data_updated', handleDataUpdate);
       window.removeEventListener('eagenda_settings_updated', handleDataUpdate);
+      window.removeEventListener('eagenda_cloud_sync_updated', handleDataUpdate);
     };
   }, []);
 
@@ -87,6 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
       (user, token) => {
         setIsDriveConnected(!!token);
         setGoogleUserEmail(user.email);
+        setSyncState(getCloudSyncState());
       },
       () => {
         setIsDriveConnected(false);
@@ -109,6 +123,18 @@ export const Header: React.FC<HeaderProps> = ({
     setShowRoleDropdown(false);
   };
 
+  const handleManualCloudSync = async () => {
+    try {
+      setIsManualSyncing(true);
+      await pushDataToGoogleCloud();
+      setSyncState(getCloudSyncState());
+    } catch (err) {
+      console.warn('Manual cloud sync error:', err);
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
+
   const handleGoogleDriveConnect = async () => {
     if (isDriveConnected) {
       setShowDisconnectConfirm(true);
@@ -122,6 +148,8 @@ export const Header: React.FC<HeaderProps> = ({
       if (res) {
         setIsDriveConnected(true);
         setGoogleUserEmail(res.user.email);
+        await pullDataFromGoogleCloud(res.accessToken);
+        setSyncState(getCloudSyncState());
       }
     } catch (err: any) {
       setAuthError(err.message || 'Gagal menghubungkan Akun Google');
@@ -135,6 +163,9 @@ export const Header: React.FC<HeaderProps> = ({
     setIsDriveConnected(false);
     setGoogleUserEmail(null);
     setShowDisconnectConfirm(false);
+    if (onLogout) {
+      onLogout();
+    }
   };
 
   const handleEnablePush = async () => {
@@ -239,33 +270,52 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Right section: Google Drive status, Notifications, Role Switcher */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Google Drive & Spreadsheet Status Button */}
-            <button
-              onClick={handleGoogleDriveConnect}
-              disabled={isAuthenticating}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-                isDriveConnected
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-              title={
-                isDriveConnected
-                  ? `Google Drive & Spreadsheet Aktif (${googleUserEmail}). Klik untuk putuskan.`
-                  : 'Hubungkan Akun Google untuk sinkronisasi otomatis Google Spreadsheet & Drive'
-              }
-            >
-              <HardDrive className={`w-3.5 h-3.5 ${isDriveConnected ? 'text-emerald-600' : 'text-slate-500'}`} />
-              <span className="hidden xl:inline">
-                {isDriveConnected ? 'Google Cloud Aktif' : 'Hubungkan Google'}
-              </span>
-              {isDriveConnected ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 hidden sm:block" />
-              ) : (
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse hidden sm:block" />
-              )}
-            </button>
+          {/* Right section: Google Drive & Cloud status, Quick Sync, Notifications, Role Switcher */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Google Drive & Cloud Sync Group */}
+            {isDriveConnected ? (
+              <div className="flex items-center bg-emerald-50/80 border border-emerald-200/90 rounded-lg p-0.5 shadow-xs">
+                {/* Sync Now button */}
+                <button
+                  onClick={handleManualCloudSync}
+                  disabled={isManualSyncing || cloudSyncState.status === 'syncing'}
+                  className="p-1.5 rounded-md text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100/70 transition-colors cursor-pointer"
+                  title="Sinkronkan data sekarang ke Google Drive & Sheets"
+                  aria-label="Sinkronkan Sekarang"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${
+                      isManualSyncing || cloudSyncState.status === 'syncing' ? 'animate-spin text-emerald-700' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Account info & status button */}
+                <button
+                  onClick={handleGoogleDriveConnect}
+                  disabled={isAuthenticating}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100/60 rounded-md transition-colors cursor-pointer"
+                  title={`Akun Google: ${googleUserEmail || 'Terhubung'}. Terakhir sinkron: ${cloudSyncState.lastSyncTime || 'Baru saja'}. Klik untuk pengaturan koneksi.`}
+                >
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="hidden xl:inline max-w-[130px] truncate text-[11px] font-semibold">
+                    {googleUserEmail ? googleUserEmail.split('@')[0] : 'Cloud Aktif'}
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleGoogleDriveConnect}
+                disabled={isAuthenticating}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 hover:border-slate-400 shadow-xs transition-colors cursor-pointer"
+                title="Hubungkan Akun Google untuk sinkronisasi otomatis Google Drive & Spreadsheet antar-komputer"
+              >
+                <Cloud className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hidden sm:inline">Sinkron Google</span>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              </button>
+            )}
 
             {/* Notification Bell */}
             <div className="relative">
@@ -505,7 +555,8 @@ export const Header: React.FC<HeaderProps> = ({
       <ConfirmDeleteModal
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
+          await logoutGoogle();
           logoutUser();
           setShowLogoutConfirm(false);
           if (onLogout) {

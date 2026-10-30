@@ -18,7 +18,8 @@ provider.addScope('https://www.googleapis.com/auth/drive.file');
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+let cachedAccessToken: string | null =
+  typeof window !== 'undefined' ? localStorage.getItem('eagenda_google_access_token') : null;
 
 // Initialize auth state listener
 export const initAuth = (
@@ -27,10 +28,11 @@ export const initAuth = (
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      const storedToken = cachedAccessToken || localStorage.getItem('eagenda_google_access_token');
+      if (storedToken) {
+        cachedAccessToken = storedToken;
+        if (onAuthSuccess) onAuthSuccess(user, storedToken);
       } else if (!isSigningIn) {
-        // Token might need re-acquisition or sign-in interaction
         if (onAuthFailure) onAuthFailure();
       }
     } else {
@@ -50,6 +52,17 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    localStorage.setItem('eagenda_google_access_token', cachedAccessToken);
+    if (result.user.email) {
+      localStorage.setItem('eagenda_google_user_email', result.user.email);
+    }
+    if (result.user.displayName) {
+      localStorage.setItem('eagenda_google_user_name', result.user.displayName);
+    }
+    if (result.user.photoURL) {
+      localStorage.setItem('eagenda_google_user_avatar', result.user.photoURL);
+    }
+
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Sign in error:', error);
@@ -60,12 +73,28 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
+  if (cachedAccessToken) return cachedAccessToken;
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('eagenda_google_access_token');
+    if (stored) {
+      cachedAccessToken = stored;
+      return stored;
+    }
+  }
+  return null;
 };
 
 export const logoutGoogle = async () => {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.warn('Sign out warning:', err);
+  }
   cachedAccessToken = null;
+  localStorage.removeItem('eagenda_google_access_token');
+  localStorage.removeItem('eagenda_google_user_email');
+  localStorage.removeItem('eagenda_google_user_name');
+  localStorage.removeItem('eagenda_google_user_avatar');
 };
 
 /**

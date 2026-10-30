@@ -30,6 +30,7 @@ import {
 } from './services/storage';
 import { syncAllSuratToGoogleSheets } from './services/googleSheetsService';
 import { getAccessToken } from './services/authGoogleDrive';
+import { triggerDebouncedCloudSync, pullDataFromGoogleCloud } from './services/cloudSyncService';
 import {
   LayoutDashboard,
   Inbox,
@@ -71,6 +72,23 @@ export default function App() {
     return () => window.removeEventListener('eagenda_data_updated', handleSync);
   }, []);
 
+  // Automatic pull from Google Drive cloud storage on startup if logged in with Google
+  useEffect(() => {
+    getAccessToken().then(async token => {
+      if (token) {
+        try {
+          const res = await pullDataFromGoogleCloud(token);
+          if (res.success) {
+            setSuratList(getSuratList());
+            setCurrentUser(getCurrentUser());
+          }
+        } catch (err) {
+          console.warn('Auto cloud sync on mount notice:', err);
+        }
+      }
+    });
+  }, []);
+
   // Handlers for modal openings
   const handleOpenDetail = (surat: SuratMasuk) => {
     setSelectedSurat(surat);
@@ -108,8 +126,9 @@ export default function App() {
     setIsPrintModalOpen(true);
   };
 
-  // Trigger background sync to Google Sheets if user is connected
+  // Trigger background sync to Google Sheets and Google Drive if user is connected
   const triggerAutoSync = (updatedList: SuratMasuk[]) => {
+    // 1. Google Sheets sync
     getAccessToken().then(token => {
       if (token) {
         syncAllSuratToGoogleSheets(updatedList).catch(err => {
@@ -117,6 +136,8 @@ export default function App() {
         });
       }
     });
+    // 2. Google Drive full JSON database cloud sync
+    triggerDebouncedCloudSync();
   };
 
   // CRUD actions
@@ -245,6 +266,7 @@ export default function App() {
         onLoginSuccess={(user) => {
           setCurrentUser(user);
           setIsAuthenticated(true);
+          setSuratList(getSuratList());
         }}
       />
     );
