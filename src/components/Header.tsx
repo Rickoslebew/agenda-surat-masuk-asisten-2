@@ -545,7 +545,10 @@ export const Header: React.FC<HeaderProps> = ({
         description="Sinkronisasi otomatis ke Google Spreadsheet dan unggah berkas ke Google Drive akan dinonaktifkan sementara sampai Anda menghubungkannya kembali."
         details={
           googleUserEmail
-            ? [{ label: 'Akun Terhubung', value: googleUserEmail }]
+            ? [
+                { label: 'Akun Terhubung', value: googleUserEmail },
+                { label: 'Folder Google Drive', value: 'E-Agenda & Disposisi Surat Digital' },
+              ]
             : []
         }
         confirmButtonText="Ya, Putuskan Koneksi"

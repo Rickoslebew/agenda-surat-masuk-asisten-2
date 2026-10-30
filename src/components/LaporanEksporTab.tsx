@@ -9,6 +9,7 @@ import {
   FileText,
   BarChart,
   HardDrive,
+  FolderOpen,
 } from 'lucide-react';
 import { SuratMasuk } from '../types';
 import { exportToExcelCSV, exportPerformaDisposisiCSV } from '../services/exportService';
@@ -17,6 +18,7 @@ import {
   syncAllSuratToGoogleSheets,
   SheetBackupStatus,
 } from '../services/googleSheetsService';
+import { getStoredAppFolderInfo } from '../services/driveFolderService';
 
 interface LaporanEksporTabProps {
   suratList: SuratMasuk[];
@@ -182,6 +184,18 @@ export const LaporanEksporTab: React.FC<LaporanEksporTabProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {getStoredAppFolderInfo().folderUrl && (
+              <a
+                href={getStoredAppFolderInfo().folderUrl!}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-blue-400/30"
+                title="Buka folder khusus tempat penyimpanan seluruh data cadangan & foto di Google Drive"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-blue-200" />
+                Buka Folder di Drive
+              </a>
+            )}
             {sheetInfo.sheetUrl && (
               <a
                 href={sheetInfo.sheetUrl}

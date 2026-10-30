@@ -60,7 +60,15 @@ export const getOrCreateBackupSpreadsheet = async (accessToken: string): Promise
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (verifyRes.ok) {
-        const data = await verifyRes.json();
+        // Ensure existing spreadsheet is in dedicated folder
+        import('./driveFolderService')
+          .then(({ getOrCreateAppFolder, moveFileToAppFolder }) => {
+            getOrCreateAppFolder(accessToken)
+              .then(folder => moveFileToAppFolder(accessToken, existingId, folder.id))
+              .catch(console.warn);
+          })
+          .catch(console.warn);
+
         const url = `https://docs.google.com/spreadsheets/d/${existingId}/edit`;
         return { id: existingId, url };
       }
@@ -101,6 +109,15 @@ export const getOrCreateBackupSpreadsheet = async (accessToken: string): Promise
   const createdData = await createRes.json();
   const id = createdData.spreadsheetId;
   const url = createdData.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${id}/edit`;
+
+  // Immediately move the newly created spreadsheet into the dedicated app folder
+  try {
+    const { getOrCreateAppFolder, moveFileToAppFolder } = await import('./driveFolderService');
+    const folder = await getOrCreateAppFolder(accessToken);
+    await moveFileToAppFolder(accessToken, id, folder.id);
+  } catch (err) {
+    console.warn('Could not move new spreadsheet to dedicated folder:', err);
+  }
 
   return { id, url };
 };

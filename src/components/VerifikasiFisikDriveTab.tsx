@@ -12,6 +12,9 @@ import {
   Building,
   UploadCloud,
   FileCheck2,
+  Folder,
+  FolderCheck,
+  FolderOpen,
 } from 'lucide-react';
 import { SuratMasuk, UserSession } from '../types';
 import {
@@ -19,6 +22,12 @@ import {
   getAccessToken,
   googleSignIn,
 } from '../services/authGoogleDrive';
+import {
+  getStoredAppFolderInfo,
+  getOrCreateAppFolder,
+  organizeAllAppFilesInFolder,
+  APP_DRIVE_FOLDER_NAME,
+} from '../services/driveFolderService';
 import { updateSuratMasuk } from '../services/storage';
 
 interface VerifikasiFisikDriveTabProps {
@@ -37,6 +46,48 @@ export const VerifikasiFisikDriveTab: React.FC<VerifikasiFisikDriveTabProps> = (
   const [search, setSearch] = useState('');
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
+  const [folderInfo, setFolderInfo] = useState(getStoredAppFolderInfo());
+  const [isOrganizing, setIsOrganizing] = useState(false);
+
+  useEffect(() => {
+    getAccessToken().then(token => {
+      if (token) {
+        getOrCreateAppFolder(token)
+          .then(info => {
+            setFolderInfo({ folderId: info.id, folderUrl: info.webViewLink });
+          })
+          .catch(console.warn);
+      }
+    });
+
+    const handleStorageUpdate = () => {
+      setFolderInfo(getStoredAppFolderInfo());
+    };
+    window.addEventListener('eagenda_data_updated', handleStorageUpdate);
+    return () => window.removeEventListener('eagenda_data_updated', handleStorageUpdate);
+  }, []);
+
+  const handleOrganizeFolder = async () => {
+    try {
+      setIsOrganizing(true);
+      setSyncStatusMsg('Memeriksa & merapikan seluruh file ke folder khusus Google Drive...');
+      let token = await getAccessToken();
+      if (!token) {
+        const authRes = await googleSignIn();
+        if (!authRes) throw new Error('Otentikasi Google Drive dibatalkan.');
+        token = authRes.accessToken;
+      }
+      const res = await organizeAllAppFilesInFolder(token);
+      setFolderInfo({ folderId: null, folderUrl: res.folderUrl });
+      setSyncStatusMsg(
+        `✓ Berhasil! Sebanyak ${res.organizedCount} file cadangan, database, & foto kini terpusat rapi di folder "${APP_DRIVE_FOLDER_NAME}".`
+      );
+    } catch (err: any) {
+      setSyncStatusMsg('Gagal merapikan folder: ' + (err.message || 'Error'));
+    } finally {
+      setIsOrganizing(false);
+    }
+  };
 
   const suratWithBukti = suratList.filter(s => !!s.buktiFisik);
   const totalWithBukti = suratWithBukti.length;
@@ -178,6 +229,53 @@ export const VerifikasiFisikDriveTab: React.FC<VerifikasiFisikDriveTabProps> = (
           <div className="p-3 bg-slate-50 rounded-lg">
             <div className="text-[11px] text-slate-500">Perlu Sinkronisasi</div>
             <div className="text-xl font-bold text-amber-600 mt-0.5">{totalUnsynced}</div>
+          </div>
+        </div>
+
+        {/* Dedicated Folder Card */}
+        <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-emerald-50/80 border border-blue-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <FolderCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                  Folder Khusus Google Drive: {APP_DRIVE_FOLDER_NAME}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                  Tersentralisasi 1 Folder
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                Seluruh data (Database Cloud JSON, Google Sheets backup, dan berkas foto fisik) otomatis tersimpan dalam 1 folder ini agar Google Drive Anda bersih dan tidak tercampur berkas pribadi lainnya.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <button
+              onClick={handleOrganizeFolder}
+              disabled={isOrganizing}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+              title="Periksa dan satukan seluruh file lama ke dalam folder khusus ini"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isOrganizing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+              {isOrganizing ? 'Merapikan File...' : 'Rapikan File ke Folder'}
+            </button>
+
+            {folderInfo.folderUrl && (
+              <a
+                href={folderInfo.folderUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                Buka Folder di Drive
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
           </div>
         </div>
       </div>

@@ -11,6 +11,11 @@ import {
 } from './storage';
 import { getAccessToken } from './authGoogleDrive';
 import { syncAllSuratToGoogleSheets, getStoredSheetInfo } from './googleSheetsService';
+import {
+  getOrCreateAppFolder,
+  moveFileToAppFolder,
+  organizeAllAppFilesInFolder,
+} from './driveFolderService';
 
 const CLOUD_SYNC_FILENAME = 'eagenda_cloud_database.json';
 const STORAGE_KEYS = {
@@ -81,7 +86,7 @@ export const findCloudDatabaseFile = async (
 ): Promise<{ id: string; modifiedTime?: string } | null> => {
   const query = encodeURIComponent(`name='${CLOUD_SYNC_FILENAME}' and trashed=false`);
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)&spaces=drive`,
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime,parents)&spaces=drive`,
     {
       headers: { Authorization: `Bearer ${token}` },
     }
@@ -93,7 +98,17 @@ export const findCloudDatabaseFile = async (
 
   const data = await response.json();
   if (data.files && data.files.length > 0) {
-    return { id: data.files[0].id, modifiedTime: data.files[0].modifiedTime };
+    const file = data.files[0];
+    // Ensure file is organized into dedicated app folder
+    getOrCreateAppFolder(token)
+      .then(folder => {
+        if (!file.parents || !file.parents.includes(folder.id)) {
+          moveFileToAppFolder(token, file.id, folder.id);
+        }
+      })
+      .catch(console.warn);
+
+    return { id: file.id, modifiedTime: file.modifiedTime };
   }
   return null;
 };
@@ -188,11 +203,22 @@ export const pullDataFromGoogleCloud = async (
  * Uploads a fresh new database JSON to Google Drive
  */
 const uploadNewCloudDatabase = async (token: string, dbData: CloudSyncDatabase): Promise<string> => {
-  const metadata = {
+  let folderId: string | undefined;
+  try {
+    const folder = await getOrCreateAppFolder(token);
+    folderId = folder.id;
+  } catch (err) {
+    console.warn('Could not resolve dedicated folder for new DB:', err);
+  }
+
+  const metadata: any = {
     name: CLOUD_SYNC_FILENAME,
     mimeType: 'application/json',
     description: 'Database Master E-Agenda & Disposisi Surat Digital (Auto Sync)',
   };
+  if (folderId) {
+    metadata.parents = [folderId];
+  }
 
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));

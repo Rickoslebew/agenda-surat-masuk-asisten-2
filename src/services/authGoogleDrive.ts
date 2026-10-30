@@ -126,12 +126,25 @@ export const uploadFileToGoogleDrive = async (
   const byteArray = new Uint8Array(byteNumbers);
   const blob = new Blob([byteArray], { type: mimeType });
 
-  // Metadata for Drive file
-  const metadata = {
+  // Ensure dedicated application folder exists
+  let folderId: string | undefined;
+  try {
+    const { getOrCreateAppFolder } = await import('./driveFolderService');
+    const folder = await getOrCreateAppFolder(token);
+    folderId = folder.id;
+  } catch (err) {
+    console.warn('Could not resolve dedicated app folder, uploading to root fallback:', err);
+  }
+
+  // Metadata for Drive file placed in dedicated folder
+  const metadata: any = {
     name: fileName,
     mimeType: mimeType,
     description: description,
   };
+  if (folderId) {
+    metadata.parents = [folderId];
+  }
 
   const form = new FormData();
   form.append(

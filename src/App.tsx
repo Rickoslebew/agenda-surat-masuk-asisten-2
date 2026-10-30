@@ -82,6 +82,12 @@ export default function App() {
             setSuratList(getSuratList());
             setCurrentUser(getCurrentUser());
           }
+          // Organize all application files into single dedicated folder in Google Drive
+          import('./services/driveFolderService')
+            .then(({ organizeAllAppFilesInFolder }) => {
+              organizeAllAppFilesInFolder(token).catch(console.warn);
+            })
+            .catch(console.warn);
         } catch (err) {
           console.warn('Auto cloud sync on mount notice:', err);
         }
