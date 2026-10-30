@@ -583,7 +583,30 @@ export const getSuratList = (): SuratMasuk[] => {
 };
 
 export const saveSuratList = (list: SuratMasuk[]): void => {
-  localStorage.setItem(STORAGE_KEYS.SURAT, JSON.stringify(list));
+  try {
+    localStorage.setItem(STORAGE_KEYS.SURAT, JSON.stringify(list));
+  } catch (err) {
+    console.warn('LocalStorage quota limit reached in saveSuratList, saving with optimized payload...', err);
+    try {
+      // In case mobile localStorage quota is tight, remove oversized data from older entries
+      const optimized = list.map((item, idx) => {
+        // Keep full photos for the 15 most recent letters
+        if (idx > 15 && item.buktiFisik?.fotoUrl && item.buktiFisik.fotoUrl.length > 100000) {
+          return {
+            ...item,
+            buktiFisik: {
+              ...item.buktiFisik,
+              fotoUrl: item.buktiFisik.driveWebViewLink || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&auto=format&fit=crop&q=80',
+            },
+          };
+        }
+        return item;
+      });
+      localStorage.setItem(STORAGE_KEYS.SURAT, JSON.stringify(optimized));
+    } catch (fallbackErr) {
+      console.error('Final fallback saveSuratList failed:', fallbackErr);
+    }
+  }
   dispatchStorageEvent();
 };
 
