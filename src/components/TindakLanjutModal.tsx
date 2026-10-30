@@ -72,7 +72,9 @@ export const TindakLanjutModal: React.FC<TindakLanjutModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
+    const isImageMime = file.type.startsWith('image/');
+    const isImageExt = /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(file.name);
+    if (!isImageMime && !isImageExt && file.type !== '') {
       setErrorMessage('Format berkas harus berupa gambar (JPG, PNG, atau WEBP).');
       return;
     }
@@ -84,38 +86,44 @@ export const TindakLanjutModal: React.FC<TindakLanjutModalProps> = ({
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 960;
-        const MAX_HEIGHT = 960;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 960;
+          const MAX_HEIGHT = 960;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
           }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
-          setFotoPenerimaUrl(compressedDataUrl);
-        } else {
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            setFotoPenerimaUrl(compressedDataUrl);
+          } else {
+            setFotoPenerimaUrl(event.target?.result as string);
+          }
+        } catch (err) {
           setFotoPenerimaUrl(event.target?.result as string);
+        } finally {
+          setIsCompressing(false);
         }
-        setIsCompressing(false);
       };
       img.onerror = () => {
-        setErrorMessage('Gagal memproses gambar foto penerima.');
+        // Fallback directly to dataUrl so mobile user is never stuck
+        setFotoPenerimaUrl(event.target?.result as string);
         setIsCompressing(false);
       };
       img.src = event.target?.result as string;
@@ -360,13 +368,16 @@ export const TindakLanjutModal: React.FC<TindakLanjutModalProps> = ({
                     {catatanFoto || 'Foto bukti serah terima berkas'}
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium rounded-md transition-colors cursor-pointer"
-                    >
-                      Ganti Foto
-                    </button>
+                    <label className="relative overflow-hidden cursor-pointer px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded-md transition-colors flex items-center gap-1">
+                      <span>Ganti Foto</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handlePhotoSelect}
+                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                      />
+                    </label>
                     <button
                       type="button"
                       onClick={handleRemovePhoto}
@@ -379,20 +390,14 @@ export const TindakLanjutModal: React.FC<TindakLanjutModalProps> = ({
               </div>
             ) : (
               <div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handlePhotoSelect}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isCompressing}
-                  className="w-full border-2 border-dashed border-blue-300 hover:border-blue-500 bg-white/80 hover:bg-white p-3.5 rounded-xl text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1.5 text-slate-600 hover:text-blue-700"
-                >
+                <label className="relative overflow-hidden cursor-pointer w-full border-2 border-dashed border-blue-300 hover:border-blue-500 bg-white/80 hover:bg-white p-3.5 rounded-xl text-center transition-all flex flex-col items-center justify-center gap-1.5 text-slate-600 hover:text-blue-700">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoSelect}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                  />
                   <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
                     {isCompressing ? (
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -406,7 +411,7 @@ export const TindakLanjutModal: React.FC<TindakLanjutModalProps> = ({
                   <span className="text-[10px] text-slate-400">
                     Mendukung kamera langsung di ponsel atau berkas JPG/PNG dari komputer
                   </span>
-                </button>
+                </label>
               </div>
             )}
           </div>

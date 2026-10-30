@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { X, FileText, Camera, Upload, AlertCircle, Check, Edit3 } from 'lucide-react';
+import {
+  X,
+  FileText,
+  Camera,
+  Upload,
+  AlertCircle,
+  Check,
+  Edit3,
+  Smartphone,
+  FolderOpen,
+  Trash2,
+  RefreshCw,
+} from 'lucide-react';
 import { SuratMasuk, SifatSurat, StatusSurat, UserSession } from '../types';
 
 interface SuratModalProps {
@@ -89,7 +101,8 @@ export const SuratModal: React.FC<SuratModalProps> = ({
     }
   }, [suratToEdit, isOpen]);
 
-  if (!isOpen) return null;
+  const [isCompressingFoto, setIsCompressingFoto] = useState(false);
+  const [fotoErrorMessage, setFotoErrorMessage] = useState<string | null>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,15 +111,67 @@ export const SuratModal: React.FC<SuratModalProps> = ({
     }
   };
 
-  const handleFotoBuktiUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFotoBuktiUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  const processAndCompressFoto = (file: File) => {
+    const isImageMime = file.type.startsWith('image/');
+    const isImageExt = /\.(jpe?g|png|webp|heic|heif|gif|bmp)$/i.test(file.name);
+    if (!isImageMime && !isImageExt && file.type !== '') {
+      setFotoErrorMessage('Format berkas harus berupa gambar (JPG, PNG, atau WEBP).');
+      return;
     }
+
+    setIsCompressingFoto(true);
+    setFotoErrorMessage(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1024;
+          const MAX_HEIGHT = 1024;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            setFotoBuktiUrl(compressed);
+          } else {
+            setFotoBuktiUrl(event.target?.result as string);
+          }
+        } catch {
+          setFotoBuktiUrl(event.target?.result as string);
+        } finally {
+          setIsCompressingFoto(false);
+        }
+      };
+      img.onerror = () => {
+        setFotoBuktiUrl(event.target?.result as string);
+        setIsCompressingFoto(false);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      setFotoErrorMessage('Gagal membaca berkas gambar.');
+      setIsCompressingFoto(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -467,31 +532,93 @@ export const SuratModal: React.FC<SuratModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
-              <label className="cursor-pointer px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-xs flex items-center gap-1.5">
-                <Camera className="w-3.5 h-3.5" />
-                Unggah Foto Bukti Fisik
-                <input
-                  type="file"
-                  onChange={handleFotoBuktiUpload}
-                  className="hidden"
-                  accept="image/*"
-                />
-              </label>
+            {fotoErrorMessage && (
+              <div className="text-[11px] text-rose-600 font-semibold p-2 bg-rose-50 rounded-lg border border-rose-200">
+                {fotoErrorMessage}
+              </div>
+            )}
 
-              {fotoBuktiUrl && (
-                <div className="flex items-center gap-2">
-                  <img
-                    src={fotoBuktiUrl}
-                    alt="Preview bukti"
-                    className="w-9 h-9 object-cover rounded-lg border border-emerald-300 shadow-xs"
-                  />
-                  <span className="text-emerald-800 text-xs font-semibold flex items-center gap-1">
-                    <Check className="w-3.5 h-3.5 text-emerald-600" /> Foto berhasil disematkan
-                  </span>
+            {fotoBuktiUrl ? (
+              <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-emerald-300 shadow-xs">
+                <img
+                  src={fotoBuktiUrl}
+                  alt="Preview bukti"
+                  className="w-14 h-14 object-cover rounded-lg border border-emerald-200 shadow-xs shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-emerald-800 text-xs font-bold flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Foto Bukti Fisik Siap Disimpan
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                    Penerima: {namaPenerimaFisik || currentUser.nama}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <label className="relative overflow-hidden cursor-pointer px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded-md transition-colors flex items-center gap-1">
+                      <Camera className="w-3 h-3 text-emerald-600" />
+                      Ganti Foto
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) processAndCompressFoto(f);
+                          e.target.value = '';
+                        }}
+                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFotoBuktiUrl('')}
+                      className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 text-[11px] font-semibold rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" /> Hapus
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : isCompressingFoto ? (
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-center flex items-center justify-center gap-2 text-xs text-emerald-800 font-semibold">
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                Memproses dan mengompresi foto berkas...
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                {/* Button 1: Kamera HP Direct Native Overlay */}
+                <label className="relative overflow-hidden cursor-pointer px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition-all">
+                  <Smartphone className="w-4 h-4 shrink-0" />
+                  <span>Foto Kamera HP Langsung</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) processAndCompressFoto(f);
+                      e.target.value = '';
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                  />
+                </label>
+
+                {/* Button 2: Galeri / File HP Direct Native Overlay */}
+                <label className="relative overflow-hidden cursor-pointer px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition-all">
+                  <FolderOpen className="w-4 h-4 shrink-0" />
+                  <span>Pilih dari Galeri / Berkas</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) processAndCompressFoto(f);
+                      e.target.value = '';
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Form Actions */}
