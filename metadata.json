@@ -1,0 +1,8 @@
+{
+  "name": "Remix E-Agenda \u0026 Disposisi Surat Digital",
+  "description": "Sistem manajemen agenda surat masuk digital, lembar disposisi pimpinan, bukti serah terima fisik, pelacakan status real-time, dan dasbor analitik performa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

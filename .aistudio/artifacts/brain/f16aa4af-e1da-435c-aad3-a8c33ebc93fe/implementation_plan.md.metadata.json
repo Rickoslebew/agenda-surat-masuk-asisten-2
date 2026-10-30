@@ -1,0 +1,6 @@
+{
+  "summary":  "Rencana implementasi menyeluruh untuk perbaikan fitur hapus surat masuk dan disposisi (menggunakan modal in-app tanpa window.confirm), penyederhanaan menu disposisi tanpa batas waktu penyelesaian, serta integrasi backup dan sinkronisasi dua arah dengan Google Spreadsheet via Google OAuth.",
+  "updatedAt":  "2026-10-23T14:00:39.225974581Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
