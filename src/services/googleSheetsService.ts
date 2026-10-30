@@ -200,9 +200,26 @@ export const syncAllSuratToGoogleSheets = async (
       }
     });
 
+    // Helper to calculate column letter from 1-indexed column count
+    const getColumnLetter = (colIndex: number): string => {
+      let temp = colIndex;
+      let letter = '';
+      while (temp > 0) {
+        const mod = (temp - 1) % 26;
+        letter = String.fromCharCode(65 + mod) + letter;
+        temp = Math.floor((temp - mod) / 26);
+      }
+      return letter;
+    };
+
+    const totalCols = headers.length;
+    const endColLetter = getColumnLetter(totalCols);
+    const totalRows = Math.max(rows.length, 1);
+    const targetRange = `Agenda Surat Masuk!A1:${endColLetter}${totalRows}`;
+
     // 1. Clear existing values to prevent leftover rows from deleted items
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Agenda%20Surat%20Masuk!A1:R1000:clear`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent('Agenda Surat Masuk!A1:Z5000')}:clear`,
       {
         method: 'POST',
         headers: {
@@ -212,9 +229,9 @@ export const syncAllSuratToGoogleSheets = async (
       }
     );
 
-    // 2. Put new fresh data
+    // 2. Put new fresh data with exact matching range in URL and request body
     const updateRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Agenda%20Surat%20Masuk!A1?valueInputOption=USER_ENTERED`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(targetRange)}?valueInputOption=USER_ENTERED`,
       {
         method: 'PUT',
         headers: {
@@ -222,7 +239,7 @@ export const syncAllSuratToGoogleSheets = async (
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          range: `Agenda Surat Masuk!A1:R${rows.length}`,
+          range: targetRange,
           majorDimension: 'ROWS',
           values: rows,
         }),
