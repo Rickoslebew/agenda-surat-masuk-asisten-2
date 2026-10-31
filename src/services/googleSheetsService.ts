@@ -1,5 +1,5 @@
 import { SuratMasuk } from '../types';
-import { getAccessToken } from './authGoogleDrive';
+import { getAccessToken, clearAccessToken } from './authGoogleDrive';
 
 const STORAGE_KEYS = {
   SHEET_ID: 'eagenda_google_sheet_id_v1',
@@ -71,9 +71,15 @@ export const getOrCreateBackupSpreadsheet = async (accessToken: string): Promise
 
         const url = `https://docs.google.com/spreadsheets/d/${existingId}/edit`;
         return { id: existingId, url };
+      } else if (verifyRes.status === 401) {
+        clearAccessToken();
+        throw new Error('Sesi otorisasi Google telah berakhir (401). Silakan hubungkan kembali akun Google.');
       }
-    } catch {
-      // Continue to create new if verification fails
+    } catch (e: any) {
+      if (e.message?.includes('401') || e.message?.includes('UNAUTHENTICATED')) {
+        throw e;
+      }
+      // Continue to create new if verification fails for other reasons
     }
   }
 
@@ -102,6 +108,10 @@ export const getOrCreateBackupSpreadsheet = async (accessToken: string): Promise
   });
 
   if (!createRes.ok) {
+    if (createRes.status === 401) {
+      clearAccessToken();
+      throw new Error('Sesi otorisasi Google telah berakhir (401). Silakan hubungkan kembali akun Google.');
+    }
     const errText = await createRes.text();
     throw new Error('Gagal membuat Google Spreadsheet baru: ' + errText);
   }
@@ -264,6 +274,10 @@ export const syncAllSuratToGoogleSheets = async (
     );
 
     if (!updateRes.ok) {
+      if (updateRes.status === 401) {
+        clearAccessToken();
+        throw new Error('Sesi otorisasi Google telah berakhir (401).');
+      }
       const errText = await updateRes.text();
       throw new Error('Gagal menulis data ke Google Spreadsheet: ' + errText);
     }

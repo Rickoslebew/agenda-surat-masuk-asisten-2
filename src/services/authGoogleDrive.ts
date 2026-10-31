@@ -84,14 +84,21 @@ export const getAccessToken = async (): Promise<string | null> => {
   return null;
 };
 
+export const clearAccessToken = () => {
+  cachedAccessToken = null;
+  localStorage.removeItem('eagenda_google_access_token');
+  localStorage.setItem('eagenda_drive_sync_status_v1', 'offline');
+  window.dispatchEvent(new CustomEvent('eagenda_cloud_sync_updated'));
+  window.dispatchEvent(new Event('eagenda_data_updated'));
+};
+
 export const logoutGoogle = async () => {
   try {
     await signOut(auth);
   } catch (err) {
     console.warn('Sign out warning:', err);
   }
-  cachedAccessToken = null;
-  localStorage.removeItem('eagenda_google_access_token');
+  clearAccessToken();
   localStorage.removeItem('eagenda_google_user_email');
   localStorage.removeItem('eagenda_google_user_name');
   localStorage.removeItem('eagenda_google_user_avatar');
@@ -165,6 +172,10 @@ export const uploadFileToGoogleDrive = async (
   );
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAccessToken();
+      throw new Error('Sesi Google Drive telah berakhir. Silakan hubungkan kembali akun Google Anda.');
+    }
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
       errorData.error?.message || `Gagal mengunggah file ke Google Drive (Status: ${response.status})`

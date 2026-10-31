@@ -12,7 +12,6 @@ import {
   Trash2,
   Smartphone,
   FolderOpen,
-  FileCheck,
 } from 'lucide-react';
 import { SuratMasuk, BuktiSerahTerima, UserSession } from '../types';
 import {
@@ -20,6 +19,7 @@ import {
   getAccessToken,
   googleSignIn,
 } from '../services/authGoogleDrive';
+import { compressMobileImage } from '../utils/imageCompressor';
 
 interface SerahTerimaModalProps {
   isOpen: boolean;
@@ -140,70 +140,18 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
   };
 
   // Safe client-side image compression: converts heavy smartphone photos (4MB-15MB) into high-quality ~90KB-160KB JPEG
-  const processAndCompressFile = (file: File) => {
-    const isImageMime = file.type.startsWith('image/');
-    const isImageExt = /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(file.name);
-    if (!isImageMime && !isImageExt && file.type !== '') {
-      setFormError('Format berkas harus berupa gambar (JPG, PNG, WEBP, atau HEIC).');
-      return;
-    }
-
-    setIsCompressing(true);
-    setFormError(null);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1024;
-          const MAX_HEIGHT = 1024;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = Math.round((width * MAX_HEIGHT) / height);
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
-            setFotoUrl(compressedDataUrl);
-            setFormError(null);
-          } else {
-            setFotoUrl(event.target?.result as string);
-          }
-        } catch (err: any) {
-          console.warn('Canvas compression error:', err);
-          setFotoUrl(event.target?.result as string);
-        } finally {
-          setIsCompressing(false);
-        }
-      };
-      img.onerror = () => {
-        // Fallback directly to dataUrl so mobile user is never stuck
-        setFotoUrl(event.target?.result as string);
-        setIsCompressing(false);
-      };
-      img.src = event.target?.result as string;
-    };
-    reader.onerror = () => {
-      setFormError('Gagal membaca berkas dari perangkat.');
+  const processAndCompressFile = async (file: File) => {
+    try {
+      setIsCompressing(true);
+      setFormError(null);
+      const res = await compressMobileImage(file, 1200, 1200, 0.82);
+      setFotoUrl(res.dataUrl);
+    } catch (err: any) {
+      console.warn('Canvas compression error:', err);
+      setFormError(err.message || 'Gagal memproses gambar foto berkas.');
+    } finally {
       setIsCompressing(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -259,149 +207,33 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
     }
   };
 
-  // Generate high-resolution digital receipt stamp as reliable fallback or quick receipt
-  const generateDigitalReceipt = (
-    noAgenda: string,
-    noSurat: string,
-    perihal: string,
-    penerima: string,
-    waktu: string,
-    kurir: string,
-    resi?: string
-  ): string => {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 800;
-      canvas.height = 500;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return '';
-
-      // Background & decorative border
-      ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(0, 0, 800, 500);
-      ctx.strokeStyle = '#0284c7';
-      ctx.lineWidth = 6;
-      ctx.strokeRect(20, 20, 760, 460);
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(28, 28, 744, 444);
-
-      // Header
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('LEMBAR TANDA TERIMA BERKAS FISIK SURAT', 400, 75);
-
-      ctx.font = '13px sans-serif';
-      ctx.fillStyle = '#64748b';
-      ctx.fillText('BUKTI RESMI PENERIMAAN DOKUMEN FISIK - SISTEM PERSURATAN DIGITAL', 400, 102);
-
-      // Divider
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(50, 120);
-      ctx.lineTo(750, 120);
-      ctx.stroke();
-
-      // Content Table
-      ctx.textAlign = 'left';
-      const drawRow = (label: string, val: string, y: number) => {
-        ctx.font = 'bold 14px sans-serif';
-        ctx.fillStyle = '#475569';
-        ctx.fillText(label, 60, y);
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 15px sans-serif';
-        ctx.fillText(`: ${val}`, 260, y);
-      };
-
-      drawRow('Nomor Agenda Digital', noAgenda, 160);
-      drawRow('Nomor Surat Resmi', noSurat, 195);
-      const safePerihal = perihal.length > 42 ? perihal.slice(0, 40) + '...' : perihal;
-      drawRow('Perihal Surat', safePerihal, 230);
-      drawRow('Petugas Penerima Fisik', penerima, 265);
-      drawRow('Waktu Penerimaan', waktu, 300);
-      drawRow('Jasa Ekspedisi / Kurir', kurir, 335);
-      if (resi) {
-        drawRow('Nomor Resi Pengiriman', resi, 370);
-      }
-
-      // Verification stamp
-      ctx.save();
-      ctx.translate(620, 390);
-      ctx.rotate(-0.06);
-      ctx.strokeStyle = '#059669';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(-95, -32, 190, 64);
-      ctx.fillStyle = '#059669';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('TERVERIFIKASI FISIK', 0, -6);
-      ctx.font = '11px sans-serif';
-      ctx.fillText('TATA USAHA PERSURATAN', 0, 14);
-      ctx.restore();
-
-      return canvas.toDataURL('image/jpeg', 0.85);
-    } catch {
-      return '';
-    }
-  };
-
-  const handleGenerateQuickReceipt = () => {
-    const receipt = generateDigitalReceipt(
-      surat.nomorAgenda,
-      surat.nomorSurat,
-      surat.perihal,
-      namaPenerimaFisik.trim() || currentUser.nama,
-      tanggalSerahTerima || defaultDate,
-      ekspedisiKurir.trim() || 'Kurir Resmi / Antar Langsung',
-      nomorResi.trim() || undefined
-    );
-    if (receipt) {
-      setFotoUrl(receipt);
-      setFormError(null);
-    }
-  };
-
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
     setFormError(null);
 
-    let finalFotoUrl = fotoUrl;
-
-    // If no photo was taken or selected, automatically generate official digital receipt so saving NEVER fails
-    if (!finalFotoUrl) {
-      finalFotoUrl = generateDigitalReceipt(
-        surat.nomorAgenda,
-        surat.nomorSurat,
-        surat.perihal,
-        namaPenerimaFisik.trim() || currentUser.nama,
-        tanggalSerahTerima || defaultDate,
-        ekspedisiKurir.trim() || 'Kurir Resmi / Antar Langsung',
-        nomorResi.trim() || undefined
-      );
-      if (finalFotoUrl) {
-        setFotoUrl(finalFotoUrl);
-      }
-    }
-
-    if (!finalFotoUrl) {
-      setFormError('Silakan ambil foto kamera atau gunakan tombol tanda terima digital.');
+    if (!fotoUrl) {
+      setFormError('Foto bukti serah terima fisik wajib diambil atau diunggah terlebih dahulu!');
       return;
     }
 
-    const safeNamaPenerima = namaPenerimaFisik.trim() || currentUser.nama || 'Petugas Penerima';
-    const safeTanggal = tanggalSerahTerima.trim() || defaultDate;
+    if (!namaPenerimaFisik.trim()) {
+      setFormError('Nama petugas penerima fisik wajib diisi!');
+      return;
+    }
+
+    if (!tanggalSerahTerima.trim()) {
+      setTanggalSerahTerima(defaultDate);
+    }
 
     try {
       setIsSaving(true);
 
       const bukti: BuktiSerahTerima = {
         id: initialBukti?.id || 'bkt-' + Date.now(),
-        fotoUrl: finalFotoUrl,
-        namaPenerimaFisik: safeNamaPenerima,
-        tanggalSerahTerima: safeTanggal,
+        fotoUrl,
+        namaPenerimaFisik: namaPenerimaFisik.trim(),
+        tanggalSerahTerima: tanggalSerahTerima.trim() || defaultDate,
         ekspedisiKurir: ekspedisiKurir.trim() || 'Kurir Resmi / Antar Langsung',
         nomorResi: nomorResi.trim() || undefined,
         catatan: catatan.trim() || undefined,
@@ -425,6 +257,23 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      {/* Hidden Mobile Native Inputs */}
+      <input
+        type="file"
+        ref={cameraInputRef}
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={galleryInputRef}
+        accept="image/*"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl my-4 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
@@ -548,27 +397,22 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
 
                 {/* Quick actions on phone & computer */}
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <label className="relative overflow-hidden cursor-pointer flex-1 sm:flex-none px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-lg font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-colors">
-                    <Smartphone className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Ambil Ulang Kamera</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleFileInputChange}
-                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-                    />
-                  </label>
-                  <label className="relative overflow-hidden cursor-pointer flex-1 sm:flex-none px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-lg font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-colors">
-                    <FolderOpen className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <span>Ganti dari Galeri</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileInputChange}
-                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-                    />
-                  </label>
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex-1 sm:flex-none px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-lg font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+                    Ambil Ulang Kamera
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="flex-1 sm:flex-none px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 rounded-lg font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
+                    Ganti dari Galeri
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -578,7 +422,7 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
                       setDriveWebViewLink(undefined);
                       setDriveMessage(null);
                     }}
-                    className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Hapus Foto
@@ -596,53 +440,36 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
                   Foto fisik tanda terima dokumen, resi ekspedisi, atau stempel basah penerimaan
                 </p>
 
-                {/* Primary Action Buttons with native overlay */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5">
-                  {/* Button 1: Kamera HP (Direct Native Camera Overlay) */}
-                  <label className="relative overflow-hidden cursor-pointer px-4 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-all">
-                    <Smartphone className="w-4 h-4 shrink-0" />
-                    <span>Buka Kamera HP (Foto Langsung)</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleFileInputChange}
-                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-                    />
-                  </label>
+                {/* Primary Action Buttons */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2">
+                  {/* Button 1: Kamera HP (Direct Native Camera) */}
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    Buka Kamera HP (Foto Langsung)
+                  </button>
 
-                  {/* Button 2: Galeri / File (Direct Native Gallery Overlay) */}
-                  <label className="relative overflow-hidden cursor-pointer px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-all">
-                    <FolderOpen className="w-4 h-4 shrink-0" />
-                    <span>Pilih dari Galeri / Berkas HP</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileInputChange}
-                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-                    />
-                  </label>
+                  {/* Button 2: Galeri / File */}
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    Pilih dari Galeri / Berkas
+                  </button>
 
                   {/* Button 3: Webcam PC (optional fallback) */}
                   <button
                     type="button"
                     onClick={startWebcam}
-                    className="hidden sm:flex px-3.5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs border border-slate-200 items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="hidden sm:flex px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs border border-slate-200 items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <Camera className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                    <span>Webcam Laptop</span>
-                  </button>
-                </div>
-
-                {/* Button 4: Buat Tanda Terima Digital Resmi (Tanpa Kamera) */}
-                <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={handleGenerateQuickReceipt}
-                    className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 rounded-lg font-medium text-xs border border-slate-200 flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <FileCheck className="w-4 h-4 text-emerald-600" />
-                    <span>Buat Tanda Terima Digital Resmi (Tanpa Kamera HP)</span>
+                    <Camera className="w-3.5 h-3.5 text-slate-500" />
+                    Webcam Laptop
                   </button>
                 </div>
               </div>
@@ -796,39 +623,28 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
         </form>
 
         {/* Footer Actions (Sticky at bottom for mobile) */}
-        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          {formError ? (
-            <div className="text-xs text-rose-600 font-bold text-left flex items-center gap-1">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{formError}</span>
-            </div>
-          ) : (
-            <div className="text-[11px] text-slate-400 hidden sm:block">
-              Verifikasi serah terima akan dicatat permanen dalam sistem & tersinkron.
-            </div>
-          )}
-          <div className="flex items-center justify-end gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => {
-                stopWebcam();
-                onClose();
-              }}
-              disabled={isSaving}
-              className="flex-1 sm:flex-none px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            >
-              Batal
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSave()}
-              disabled={isSaving || isCompressing}
-              className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                isSaving || isCompressing
-                  ? 'bg-emerald-400 text-white cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
-              }`}
-            >
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              stopWebcam();
+              onClose();
+            }}
+            disabled={isSaving}
+            className="px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave()}
+            disabled={isSaving || isCompressing}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 transition-all cursor-pointer ${
+              isSaving || isCompressing
+                ? 'bg-emerald-400 text-white cursor-not-allowed'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+            }`}
+          >
             {isSaving ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -845,11 +661,9 @@ export const SerahTerimaModal: React.FC<SerahTerimaModalProps> = ({
                 Simpan & Validasi Bukti Fisik
               </>
             )}
-            </button>
-          </div>
+          </button>
         </div>
       </div>
     </div>
   );
 };
-

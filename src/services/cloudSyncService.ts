@@ -9,7 +9,7 @@ import {
   getUsersList,
   saveUsersList,
 } from './storage';
-import { getAccessToken } from './authGoogleDrive';
+import { getAccessToken, clearAccessToken } from './authGoogleDrive';
 import { syncAllSuratToGoogleSheets, getStoredSheetInfo } from './googleSheetsService';
 import {
   getOrCreateAppFolder,
@@ -91,6 +91,11 @@ export const findCloudDatabaseFile = async (
       headers: { Authorization: `Bearer ${token}` },
     }
   );
+
+  if (response.status === 401) {
+    clearAccessToken();
+    throw new Error('Sesi otorisasi Google telah berakhir. Silakan hubungkan kembali akun Google Anda.');
+  }
 
   if (!response.ok) {
     throw new Error(`Gagal mencari berkas sinkronisasi di Google Drive (${response.status})`);
@@ -193,6 +198,11 @@ export const pullDataFromGoogleCloud = async (
 
     return { success: true, data: cloudData };
   } catch (error: any) {
+    if (error.message?.includes('401') || error.message?.includes('UNAUTHENTICATED') || error.message?.includes('invalid_grant')) {
+      clearAccessToken();
+      setCloudSyncState('offline', 'Sesi Google telah berakhir. Silakan klik "Hubungkan Akun Google".');
+      return { success: false, error: 'Sesi Google telah berakhir' };
+    }
     console.error('Error in pullDataFromGoogleCloud:', error);
     setCloudSyncState('error', error.message || 'Gagal menyinkronkan data Google Drive');
     return { success: false, error: error.message };
@@ -234,6 +244,10 @@ const uploadNewCloudDatabase = async (token: string, dbData: CloudSyncDatabase):
   );
 
   if (!res.ok) {
+    if (res.status === 401) {
+      clearAccessToken();
+      throw new Error('Sesi otorisasi Google telah berakhir (401).');
+    }
     const errText = await res.text();
     throw new Error('Gagal mengunggah berkas database ke Google Drive: ' + errText);
   }
@@ -298,6 +312,10 @@ export const pushDataToGoogleCloud = async (): Promise<{ success: boolean; error
       );
 
       if (!updateRes.ok) {
+        if (updateRes.status === 401) {
+          clearAccessToken();
+          throw new Error('Sesi otorisasi Google telah berakhir (401).');
+        }
         if (updateRes.status === 404) {
           // File was deleted or moved, create fresh
           fileId = await uploadNewCloudDatabase(token, dbPayload);
@@ -317,6 +335,11 @@ export const pushDataToGoogleCloud = async (): Promise<{ success: boolean; error
 
     return { success: true };
   } catch (error: any) {
+    if (error.message?.includes('401') || error.message?.includes('UNAUTHENTICATED') || error.message?.includes('invalid_grant')) {
+      clearAccessToken();
+      setCloudSyncState('offline', 'Sesi Google telah berakhir. Silakan klik "Hubungkan Akun Google".');
+      return { success: false, error: 'Sesi Google telah berakhir' };
+    }
     console.error('Error in pushDataToGoogleCloud:', error);
     setCloudSyncState('error', error.message || 'Gagal menyimpan ke Google Cloud');
     return { success: false, error: error.message };

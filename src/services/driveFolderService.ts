@@ -1,4 +1,4 @@
-import { getAccessToken } from './authGoogleDrive';
+import { getAccessToken, clearAccessToken } from './authGoogleDrive';
 
 export const APP_DRIVE_FOLDER_NAME = 'E-Agenda & Disposisi Surat Digital';
 
@@ -52,8 +52,12 @@ export const getOrCreateAppFolder = async (token?: string): Promise<AppDriveFold
             webViewLink,
           };
         }
+      } else if (verifyRes.status === 401) {
+        clearAccessToken();
+        throw new Error('Sesi otorisasi Google telah berakhir (401).');
       }
-    } catch {
+    } catch (e: any) {
+      if (e.message?.includes('401')) throw e;
       // Continue to search or create
     }
   }
@@ -83,6 +87,9 @@ export const getOrCreateAppFolder = async (token?: string): Promise<AppDriveFold
         webViewLink,
       };
     }
+  } else if (searchRes.status === 401) {
+    clearAccessToken();
+    throw new Error('Sesi otorisasi Google telah berakhir (401).');
   }
 
   // 3. Folder does not exist yet. Create a dedicated folder!
@@ -104,6 +111,10 @@ export const getOrCreateAppFolder = async (token?: string): Promise<AppDriveFold
   );
 
   if (!createRes.ok) {
+    if (createRes.status === 401) {
+      clearAccessToken();
+      throw new Error('Sesi otorisasi Google telah berakhir (401).');
+    }
     const errText = await createRes.text();
     throw new Error('Gagal membuat folder khusus di Google Drive: ' + errText);
   }

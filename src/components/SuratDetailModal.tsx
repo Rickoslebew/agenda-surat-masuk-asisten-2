@@ -16,6 +16,7 @@ import {
   Share2,
   Edit3,
   Trash2,
+  Eye,
 } from 'lucide-react';
 import { SuratMasuk, UserSession } from '../types';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
@@ -368,11 +369,32 @@ export const SuratDetailModal: React.FC<SuratDetailModalProps> = ({
 
             {surat.buktiFisik ? (
               <div className="flex flex-col sm:flex-row items-start gap-4">
-                <img
-                  src={surat.buktiFisik.fotoUrl}
-                  alt="Bukti fisik"
-                  className="w-32 h-32 object-cover rounded-xl border border-slate-200 shadow-xs shrink-0"
-                />
+                <div
+                  onClick={() =>
+                    setViewingFoto({
+                      url: surat.buktiFisik!.fotoUrl,
+                      namaPenerima: surat.buktiFisik!.namaPenerimaFisik,
+                      instansi: surat.instansiPengirim,
+                      judulSurat: surat.perihal,
+                      nomorAgenda: surat.nomorAgenda,
+                      tanggal: surat.buktiFisik!.tanggalSerahTerima,
+                      keterangan:
+                        surat.buktiFisik!.catatan ||
+                        'Bukti serah terima fisik dokumen surat masuk.',
+                    })
+                  }
+                  className="relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200 shadow-xs shrink-0 cursor-pointer group"
+                  title="Klik untuk memperbesar foto bukti fisik"
+                >
+                  <img
+                    src={surat.buktiFisik.fotoUrl}
+                    alt="Bukti fisik"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                  <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Eye className="w-5 h-5 text-white drop-shadow" />
+                  </div>
+                </div>
                 <div className="space-y-1.5 flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
