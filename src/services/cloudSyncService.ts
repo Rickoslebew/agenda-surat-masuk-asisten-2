@@ -29,6 +29,8 @@ export interface CloudSyncDatabase {
   lastUpdated: string;
   updatedBy: string;
   userEmail: string;
+  googleSheetId?: string;
+  googleSheetUrl?: string;
   suratList: SuratMasuk[];
   settings: AppSettings;
   pejabatList: PejabatUnit[];
@@ -140,11 +142,14 @@ export const pullDataFromGoogleCloud = async (
       const currentUsers = getUsersList();
 
       const userEmail = localStorage.getItem('eagenda_google_user_email') || 'rickochico20@gmail.com';
+      const currentSheetInfo = getStoredSheetInfo();
       const initialDb: CloudSyncDatabase = {
-        version: '2.4',
+        version: '2.5',
         lastUpdated: new Date().toISOString(),
         updatedBy: userEmail,
         userEmail,
+        googleSheetId: currentSheetInfo.sheetId || undefined,
+        googleSheetUrl: currentSheetInfo.sheetUrl || undefined,
         suratList: currentSurat,
         settings: currentSettings,
         pejabatList: currentPejabat,
@@ -187,6 +192,11 @@ export const pullDataFromGoogleCloud = async (
     }
     if (cloudData.usersList && Array.isArray(cloudData.usersList)) {
       saveUsersList(cloudData.usersList);
+    }
+    if (cloudData.googleSheetId && cloudData.googleSheetUrl) {
+      localStorage.setItem('eagenda_google_sheet_id_v1', cloudData.googleSheetId);
+      localStorage.setItem('eagenda_google_sheet_url_v1', cloudData.googleSheetUrl);
+      window.dispatchEvent(new Event('eagenda_data_updated'));
     }
 
     setCloudSyncState('synced', 'Data surat & disposisi berhasil disinkronkan dari Google Drive.', fileId);
@@ -283,11 +293,14 @@ export const pushDataToGoogleCloud = async (): Promise<{ success: boolean; error
     const currentUsers = getUsersList();
     const userEmail = localStorage.getItem('eagenda_google_user_email') || 'rickochico20@gmail.com';
 
+    const currentSheetInfo = getStoredSheetInfo();
     const dbPayload: CloudSyncDatabase = {
-      version: '2.4',
+      version: '2.5',
       lastUpdated: new Date().toISOString(),
       updatedBy: userEmail,
       userEmail,
+      googleSheetId: currentSheetInfo.sheetId || undefined,
+      googleSheetUrl: currentSheetInfo.sheetUrl || undefined,
       suratList: currentSurat,
       settings: currentSettings,
       pejabatList: currentPejabat,

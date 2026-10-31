@@ -10,12 +10,23 @@ import {
   BarChart,
   HardDrive,
   FolderOpen,
+  Trash2,
+  Link as LinkIcon,
+  Sparkles,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
+  X,
+  RefreshCw,
 } from 'lucide-react';
 import { SuratMasuk } from '../types';
 import { exportToExcelCSV, exportPerformaDisposisiCSV } from '../services/exportService';
 import {
   getStoredSheetInfo,
   syncAllSuratToGoogleSheets,
+  cleanupDuplicateSpreadsheetsInDrive,
+  connectCustomSpreadsheet,
+  BACKUP_SPREADSHEET_TITLE,
   SheetBackupStatus,
 } from '../services/googleSheetsService';
 import { getStoredAppFolderInfo } from '../services/driveFolderService';
@@ -33,7 +44,11 @@ export const LaporanEksporTab: React.FC<LaporanEksporTabProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [sheetInfo, setSheetInfo] = useState<SheetBackupStatus>(getStoredSheetInfo());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [isCleaningDuplicates, setIsCleaningDuplicates] = useState<boolean>(false);
+  const [showCustomLinkModal, setShowCustomLinkModal] = useState<boolean>(false);
+  const [customSheetInput, setCustomSheetInput] = useState<string>('');
+  const [isConnectingCustom, setIsConnectingCustom] = useState<boolean>(false);
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -67,6 +82,64 @@ export const LaporanEksporTab: React.FC<LaporanEksporTabProps> = ({
       });
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleCleanupDuplicates = async () => {
+    setIsCleaningDuplicates(true);
+    setSyncMessage(null);
+    try {
+      const res = await cleanupDuplicateSpreadsheetsInDrive();
+      if (res.success) {
+        setSyncMessage({
+          type: res.removedCount > 0 ? 'success' : 'info',
+          text: res.message,
+        });
+        setSheetInfo(getStoredSheetInfo());
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: res.message,
+        });
+      }
+    } catch (e: any) {
+      setSyncMessage({
+        type: 'error',
+        text: e.message || 'Gagal membersihkan duplikat spreadsheet.',
+      });
+    } finally {
+      setIsCleaningDuplicates(false);
+    }
+  };
+
+  const handleConnectCustomSheet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customSheetInput.trim()) return;
+    setIsConnectingCustom(true);
+    setSyncMessage(null);
+    try {
+      const res = await connectCustomSpreadsheet(customSheetInput);
+      if (res.success) {
+        setSyncMessage({
+          type: 'success',
+          text: 'Berhasil menautkan file Google Spreadsheet master yang ditentukan.',
+        });
+        setShowCustomLinkModal(false);
+        setCustomSheetInput('');
+        setSheetInfo(getStoredSheetInfo());
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: res.error || 'Gagal menautkan spreadsheet.',
+        });
+      }
+    } catch (e: any) {
+      setSyncMessage({
+        type: 'error',
+        text: e.message || 'Gagal menautkan spreadsheet.',
+      });
+    } finally {
+      setIsConnectingCustom(false);
     }
   };
 
@@ -156,44 +229,38 @@ export const LaporanEksporTab: React.FC<LaporanEksporTabProps> = ({
         </div>
       </div>
 
-      {/* Google Spreadsheet Live Sync & Backup Card */}
-      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-xl p-5 text-white shadow-md">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
+      {/* Google Spreadsheet Live Sync & Backup Card (1 Master File / Anti-Spam) */}
+      <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-lg border border-emerald-800/40 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div className="space-y-1.5 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
                 <FileSpreadsheet className="w-4 h-4" />
               </div>
               <h3 className="text-sm font-bold text-white">
-                Backup Otomatis Google Spreadsheet (Live Cloud Sync)
+                Backup Otomatis Google Spreadsheet (1 File Master Tunggal)
               </h3>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/20">
-                Tersinkronisasi
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                1 File Master • Anti-Spam
               </span>
             </div>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-              Setiap penambahan, pembaruan, maupun <span className="text-emerald-300 font-bold">penghapusan</span> surat masuk dan lembar disposisi akan otomatis disinkronkan ke Google Spreadsheet Anda. Jika surat dihapus di aplikasi, baris di spreadsheet pun otomatis terhapus bersih.
+              Sistem selalu menyunting dan memperbarui <strong className="text-emerald-300 font-semibold">1 file Google Spreadsheet yang sama</strong> secara otomatis. Setiap ada naskah baru, perubahan isi, maupun penghapusan surat, baris di file spreadsheet ini langsung diperbarui bersih tanpa pernah membuat file baru berkali-kali.
             </p>
-            {sheetInfo.lastSyncTime && (
-              <div className="text-[11px] text-emerald-300 pt-1 flex items-center gap-2">
-                <span>Waktu Sinkronisasi Terakhir: <strong>{sheetInfo.lastSyncTime}</strong></span>
-                <span>•</span>
-                <span>{sheetInfo.rowCount} naskah surat terdata</span>
-              </div>
-            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {getStoredAppFolderInfo().folderUrl && (
               <a
                 href={getStoredAppFolderInfo().folderUrl!}
                 target="_blank"
                 rel="noreferrer"
-                className="px-3.5 py-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-blue-400/30"
-                title="Buka folder khusus tempat penyimpanan seluruh data cadangan & foto di Google Drive"
+                className="px-3 py-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-blue-400/30 shadow-2xs"
+                title="Buka folder khusus tempat penyimpanan seluruh data di Google Drive"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-blue-200" />
-                Buka Folder di Drive
+                Folder di Drive
               </a>
             )}
             {sheetInfo.sheetUrl && (
@@ -201,33 +268,145 @@ export const LaporanEksporTab: React.FC<LaporanEksporTabProps> = ({
                 href={sheetInfo.sheetUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-white/20"
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-emerald-400/40 shadow-2xs"
+                title="Buka 1 file master Google Spreadsheet"
               >
-                <FileText className="w-3.5 h-3.5 text-emerald-300" />
-                Buka Google Spreadsheet
+                <FileText className="w-3.5 h-3.5 text-white" />
+                Buka Spreadsheet Master
+                <ExternalLink className="w-3 h-3 opacity-80" />
               </a>
             )}
             <button
               onClick={handleManualSync}
               disabled={isSyncing}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              className="px-3.5 py-2 bg-white/15 hover:bg-white/25 disabled:opacity-50 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all border border-white/20 cursor-pointer"
             >
-              <CheckCircle2 className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Sedang Menyinkronkan...' : 'Sinkronkan Sekarang'}
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Memperbarui...' : 'Perbarui Data Sekarang'}
+            </button>
+          </div>
+        </div>
+
+        {/* Master File Details Bar */}
+        <div className="p-3 bg-black/25 rounded-xl border border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-300">
+            <div>
+              <span className="text-slate-400">File Master: </span>
+              <strong className="text-white font-semibold">{BACKUP_SPREADSHEET_TITLE}</strong>
+            </div>
+            {sheetInfo.lastSyncTime && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">•</span>
+                <div>
+                  <span className="text-slate-400">Terakhir Diperbarui: </span>
+                  <strong className="text-emerald-300">{sheetInfo.lastSyncTime}</strong>
+                </div>
+                <span className="text-slate-600 hidden sm:inline">•</span>
+                <span className="text-slate-300">
+                  <strong className="text-white">{sheetInfo.rowCount}</strong> naskah surat terdata
+                </span>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCleanupDuplicates}
+              disabled={isCleaningDuplicates}
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+              title="Jika sebelumnya ada banyak file duplikat spreadsheet di Google Drive, klik untuk membersihkannya dan menyisakan 1 master file saja"
+            >
+              <Trash2 className="w-3 h-3 text-amber-300" />
+              {isCleaningDuplicates ? 'Membersihkan...' : 'Bersihkan Duplikat Lama di Drive'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCustomLinkModal(true)}
+              className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/20 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              title="Tautkan file Google Spreadsheet yang sudah Anda miliki"
+            >
+              <LinkIcon className="w-3 h-3 text-slate-300" />
+              Tautkan File Lain
             </button>
           </div>
         </div>
 
         {syncMessage && (
-          <div className={`mt-3 p-2.5 rounded-lg text-xs font-medium border ${
-            syncMessage.type === 'success'
-              ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
-              : 'bg-rose-500/20 border-rose-400/40 text-rose-200'
-          }`}>
-            {syncMessage.text}
+          <div
+            className={`p-3 rounded-xl text-xs font-medium border flex items-start gap-2 ${
+              syncMessage.type === 'success'
+                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+                : syncMessage.type === 'info'
+                ? 'bg-blue-500/20 border-blue-400/40 text-blue-200'
+                : 'bg-rose-500/20 border-rose-400/40 text-rose-200'
+            }`}
+          >
+            {syncMessage.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+            {syncMessage.type === 'info' && <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />}
+            {syncMessage.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />}
+            <span>{syncMessage.text}</span>
           </div>
         )}
       </div>
+
+      {/* Modal Tautkan Spreadsheet Khusus */}
+      {showCustomLinkModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+              <span className="text-xs font-bold flex items-center gap-1.5">
+                <LinkIcon className="w-4 h-4 text-emerald-400" />
+                Tautkan File Master Google Spreadsheet
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCustomLinkModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleConnectCustomSheet} className="p-5 space-y-4 text-xs">
+              <p className="text-slate-600 leading-relaxed">
+                Jika Anda sudah memiliki file Google Spreadsheet tertentu yang ingin dijadikan master tunggal untuk backup, masukkan URL atau Spreadsheet ID di bawah ini:
+              </p>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  URL / ID Google Spreadsheet:
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="https://docs.google.com/spreadsheets/d/1aBcD.../edit"
+                  value={customSheetInput}
+                  onChange={e => setCustomSheetInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-800 outline-none focus:border-emerald-500 font-mono text-[11px]"
+                />
+              </div>
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900">
+                Setelah ditautkan, aplikasi hanya akan mengedit file tersebut setiap kali ada perubahan data tanpa membuat file baru.
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomLinkModal(false)}
+                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold rounded-lg text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isConnectingCustom}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg text-xs"
+                >
+                  {isConnectingCustom ? 'Memverifikasi...' : 'Simpan & Tautkan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Ekspor Options Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
